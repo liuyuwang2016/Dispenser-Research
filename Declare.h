@@ -9,6 +9,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 #include <cv.h>
+#include <opencv2/imgcodecs/imgcodecs.hpp>
 /*--------------Kinect-------------*/
 #include <Kinect.h>
 #include <windows.h>   
@@ -26,6 +27,8 @@
 #include "portaudio.h"
 using namespace std;
 using namespace cv;
+/*------------ReadMe------------*/
+void showHelpText();
 /*--------------M232---------------*/
 #include <iostream>
 #include <fstream>
@@ -59,8 +62,11 @@ void OutputValue(Mat M, int Row, int Col, int Chan, float* Data);
 void FindROI(void);									//Find ROI Func
 //Tracking
 int ROIcount = 0;
+int PlanePixelcount = 0;
 Point2i ROICenterColorS_Old, ROICenterColorS_New;   //center of tracking object of ROI in Color Space
 Point2i* ROIPixel = nullptr;
+Point2i* PlanePixel = nullptr;
+Point2i* LineROIPixel = nullptr;
 CameraSpacePoint* ROICameraSP = nullptr;
 void MoveROI(void);                                //Tracking ROI Func
 //Mapping
@@ -81,6 +87,14 @@ CameraSpacePoint* ROICameraSP_MechCoord = nullptr;
 CameraSpacePoint* ROICameraSP_Proj_MechCoord = nullptr;
 void ROITrans(CameraSpacePoint* Data, int DataNum, GLfloat* TransM, CameraSpacePoint* Result);
 void ROITrans(float* Data, int DataNum, GLfloat* TransM, float* Result);
+//Hough Line Transform 
+
+//Mat g_dstImage, g_midImage;
+Mat ROI_Image;
+
+//Mat g_dstImage, g_grayImage, g_maskImage;
+
+//int g_nthreshold = 100;
 #pragma endregion OpenCV&ROI
 
 #pragma region Kinect
@@ -98,6 +112,8 @@ void KinectUpdate(void);				//Kinect Update Frame
 int iWidthDepth = 0;
 int iHeightDepth = 0;
 UINT depthPointCount = 0;
+
+int Planedepthcount = 0;
 UINT16* pBufferDepth = nullptr;			//Depth map origin format
 UINT16 uDepthMin = 0, uDepthMax = 0;
 Mat mDepthImg;							//Depth map UINT16
@@ -110,7 +126,7 @@ UINT colorPointCount = 0;
 UINT uBufferSizeColor = 0;
 BYTE* pBufferColor = nullptr;			//Color map origin format (RGBA)
 Mat mColorImg;							//Color map OpenCV format (BGRA)
-Mat dstImage;
+
 //Map to camera space point
 CameraSpacePoint* pCSPoints = nullptr;
 void ShowImage(void);					//Display Image Func
@@ -133,6 +149,19 @@ void DrawPointCloud(void);				//Drawing Type
 void DrawMeshes(void);
 void Draw3DLine(void);
 void Draw3DPlane(void);
+void colorExtract(Mat& inputImage, Mat& outputImage);
+vector<MatND> getHSVHist(Mat& src);
+static void onMouse3D(int event, int x, int y, int, void*);
+/*Global variable of 3d line and plane */
+Mat g_srcImage, g_dstImage, g_grayImage, g_maskImage;
+Mat dst;
+int g_nFillMode = 1;//漫水填充的模式
+int g_nLowDifference = 20, g_nUpDifference = 20;//负差最大值、正差最大值
+int g_nConnectivity = 4;//表示floodFill函数标识符低八位的连通值
+int g_bIsColor = true;//是否为彩色图的标识符布尔值
+bool g_bUseMask = false;//是否显示掩膜窗口的布尔值
+int g_nNewMaskVal = 255;
+/*-------------------------------------*/
 int FPS = 0;
 GLuint textureid;						//BG texture
 //Calculating FPS w/o waiting monitor to display
@@ -149,14 +178,14 @@ bool Cubic_IS_BLEND = FALSE;
 bool CUBIC_MOVE = FALSE;				//FLAG to translate the .obj while plate moves
 bool ARFunc_IS_ON = TRUE;				//FLAG to show AR Function or nor
 float M_Cubic[16] = {					//Machine Coordinate rotation
-	-0.9998806737707267, 0.005917352641148399, -0.01426965863354962, 0,
-	-0.003275900585287705, 0.8214974199757811, 0.570202821326316, 0,
-	0.01509657892216168, 0.5701815271567955, -0.8213800091273172, 0,
+	-0.9993817952065951, -0.0252233679179702, 0.02449100080678945, 0,
+	-0.007712917894273308, 0.836942661871766, 0.5472362301936511, 0,
+	-0.03430070417935537, 0.5467090290546492, -0.8366198056721601, 0,
 	0, 0, 0, 1 };
 float M_Cubic_inv[16] = {				//Machine Coordinate rotation inversion
-	-0.9998806737707267, -0.003275900585287447, 0.01509657892216168, 0,
-	0.005917352641148182, 0.821497419975781, 0.5701815271567955, 0,
-	-0.01426965863354976, 0.5702028213263157, -0.8213800091273169, 0,
+	-0.999381795206595, -0.007712917894273133, -0.03430070417935544, 0,
+	-0.02522336791797031, 0.8369426618717664, 0.5467090290546494, 0,
+	0.02449100080678931, 0.5472362301936513, -0.8366198056721604, 0,
 	0, 0, 0, 1 };
 CameraSpacePoint Intersect;				//Machine Coordinate translation
 void DrawCubic(void);
@@ -171,6 +200,7 @@ enum {
 	MENU_WOBG_POINTCLOUD,
 	MENU_STORAGETYPE1,
 	MENU_STORAGETYPE2,
+	MENU_COLOR_TRACK,
 
 };
 int menu_value = 0;
@@ -178,8 +208,11 @@ int submenuID_BG;
 int submenuID_WTBG_DrawType;
 int submenuID_WOBG_DrawType;
 int submenuID_StorageType;
+int submenuID_ROIType;
+
 int DRAWING_TYPE = 0;                      //Flag for drawing type: 0 = none, 1 = mesh, 2 = point cloud
 int STORAGE_TYPE = 0;                      //Flag for storage type: 0 = prob tip pt, 1 = projection pt
+int ROI_TYPE = 0;
 void BuildPopupMenu(void);
 void menuCB(int menu_value);
 /*what does this region mean? */
@@ -516,7 +549,7 @@ void OutputValue(Mat M, int Row, int Col, int Chan, uchar* Data)
 {
 	int Steps = M.cols*M.channels();
 	int Channels = M.channels();
-	uchar* srcData = M.data;
+	uchar *srcData = M.data;
 	*Data = *(srcData + Row*Steps + Col*Channels + Chan);
 }
 
@@ -536,13 +569,13 @@ void GLInit()
 	CubicPosi.y = 0;
 	CubicPosi.z = 0;
 
-	Intersect.X = 0.3610493931202467;
-	Intersect.Y = -0.2131262817002425;
+	Intersect.X = 0.4321253317674898;
+	Intersect.Y = -0.2329362648255318;
 	Intersect.Z = -1;
 
-	ObjPosi.x = -0.266 - 0.003;
-	ObjPosi.y = 0.067 + 0.099;
-	ObjPosi.z = 0.415 - 0.089;
+	ObjPosi.x = -0.266 - 0.059;
+	ObjPosi.y = 0.067 + 0.035;
+	ObjPosi.z = 0.415 + 0.003;
 
 	TipPosi.x = 0;
 	TipPosi.y = -0.035;
@@ -551,6 +584,7 @@ void GLInit()
 	DeviaDueToY = new CameraSpacePoint[1];
 	DeviaDueToY->X = DeviaDueToY->Y = DeviaDueToY->Z = 0;
 	GLfloat  whiteLight[] = { 0.45f, 0.45f, 0.45f, 1.0f };
+
 	GLfloat  sourceLight[] = { 0.25f, 0.25f, 0.25f, 1.0f };
 	GLfloat	 lightPos[] = { -50.f, 25.0f, 250.0f, 0.0f };
 
@@ -624,7 +658,6 @@ void timer(int value)
 {
 	switch (value)
 	{
-		//OpenGL refresh timer
 	case 0:
 		printf("FPS = %d\n", FPS);
 		FPS = 0;
@@ -642,22 +675,30 @@ void BuildPopupMenu()
 	glutAddMenuEntry("None", MENU_WTBG_NONE);
 	glutAddMenuEntry("Mesh", MENU_WTBG_MESH);
 	glutAddMenuEntry("Point Cloud", MENU_WTBG_POINTCLOUD);
-	glutAddMenuEntry("3D Line Dection", MENU_3D_LINE);
-	glutAddMenuEntry("3D Plane Dection", MENU_3D_PLANE);
+
 	submenuID_WOBG_DrawType = glutCreateMenu(menuCB);
 	glutAddMenuEntry("Mesh", MENU_WOBG_MESH);
 	glutAddMenuEntry("Point Cloud", MENU_WOBG_POINTCLOUD);
+
 	//2nd layer
 	submenuID_BG = glutCreateMenu(menuCB);
 	glutAddSubMenu("Color Image Background", submenuID_WTBG_DrawType);
 	glutAddSubMenu("Empty Background", submenuID_WOBG_DrawType);
+
 	submenuID_StorageType = glutCreateMenu(menuCB);
 	glutAddMenuEntry("ROI Center Point", MENU_STORAGETYPE1);
 	glutAddMenuEntry("Projection Point", MENU_STORAGETYPE2);
+
+	submenuID_ROIType = glutCreateMenu(menuCB);
+	glutAddMenuEntry("Color Tracking", MENU_COLOR_TRACK);
+	glutAddMenuEntry("3D Line Detection", MENU_3D_LINE);
+	glutAddMenuEntry("3D Plane Detection", MENU_3D_PLANE);
+
 	//1st layer
 	glutCreateMenu(menuCB);
 	glutAddSubMenu("Background type", submenuID_BG);
 	glutAddSubMenu("Storage type", submenuID_StorageType);
+	glutAddSubMenu("ROI type", submenuID_ROIType);
 	glutAttachMenu(GLUT_RIGHT_BUTTON);
 }
 
@@ -677,12 +718,6 @@ void menuCB(int menu_value)
 		BG_IS_OPEN = TRUE;
 		DRAWING_TYPE = 2;
 		break;
-	case MENU_3D_LINE:
-		BG_IS_OPEN = TRUE;
-		DRAWING_TYPE = 3;
-	case MENU_3D_PLANE:
-		BG_IS_OPEN = TRUE;
-		DRAWING_TYPE = 4;
 	case MENU_WOBG_MESH:
 		BG_IS_OPEN = FALSE;
 		DRAWING_TYPE = 1;
@@ -696,6 +731,18 @@ void menuCB(int menu_value)
 		break;
 	case MENU_STORAGETYPE2:
 		STORAGE_TYPE = 1;
+		break;
+	case MENU_COLOR_TRACK:
+		BG_IS_OPEN = TRUE;
+		ROI_TYPE = 0;
+		break;
+	case MENU_3D_LINE:
+		BG_IS_OPEN = TRUE;
+		ROI_TYPE = 1;
+		break;
+	case MENU_3D_PLANE:
+		BG_IS_OPEN = TRUE;
+		ROI_TYPE = 2;
 		break;
 	}
 }
@@ -756,7 +803,6 @@ void SceneWithBackground()
 	}
 	glDisable(GL_TEXTURE_2D);
 	static const double kFovY = 53.3;
-	//static const double kPI = 3.1415926535897932384626433832795;
 	double nearDist, farDist, aspect;
 	nearDist = 0.01f / tan((kFovY / 2.0) * CV_PI / 180.0);
 	farDist = 20000;
@@ -774,7 +820,6 @@ void SceneWithBackground()
 void SceneWithoutBackground()
 {
 	static const double kFovY = 53.3;
-	//static const double kPI = 3.1415926535897932384626433832795;
 	double nearDist, farDist, aspect;
 	nearDist = 0.01f / tan((kFovY / 2.0) * CV_PI / 180.0);
 	farDist = 20000;
@@ -809,14 +854,396 @@ void DrawPointCloud()
 	glPopMatrix();
 }
 
+static void onMouse3D(int event, int x, int y, int, void*)
+{
+	// 若鼠标左键没有按下，便返回
+	if (event != EVENT_LBUTTONDOWN)
+		return;
+
+	//-------------------【<1>调用floodFill函数之前的参数准备部分】---------------
+	Point seed = Point(x, y);
+	int LowDifference = g_nFillMode == 0 ? 0 : g_nLowDifference;//空范围的漫水填充，此值设为0，否则设为全局的g_nLowDifference
+	int UpDifference = g_nFillMode == 0 ? 0 : g_nUpDifference;//空范围的漫水填充，此值设为0，否则设为全局的g_nUpDifference
+
+	//标识符的0~7位为g_nConnectivity，8~15位为g_nNewMaskVal左移8位的值，16~23位为CV_FLOODFILL_FIXED_RANGE或者0。
+	int flags = g_nConnectivity + (g_nNewMaskVal << 8) + (g_nFillMode == 1 ? FLOODFILL_FIXED_RANGE : 0);
+
+	//随机生成bgr值
+	int b = 255;//全部填充蓝色
+	int g = 0;
+	int r = 0;
+	Rect ccomp;//定义重绘区域的最小边界矩形区域
+
+	Scalar newVal = g_bIsColor ? Scalar(b, g, r) : Scalar(r*0.299 + g*0.587 + b*0.114);//在重绘区域像素的新值，若是彩色图模式，取Scalar(b, g, r)；若是灰度图模式，取Scalar(r*0.299 + g*0.587 + b*0.114)
+
+	Mat dst = g_bIsColor ? g_dstImage : g_grayImage;//目标图的赋值
+	int area;
+
+	//--------------------【<2>正式调用floodFill函数】-----------------------------
+	if (g_bUseMask)
+	{
+		threshold(g_maskImage, g_maskImage, 1, 128, THRESH_BINARY);
+		area = floodFill(dst, g_maskImage, seed, newVal, &ccomp, Scalar(LowDifference, LowDifference, LowDifference),
+			Scalar(UpDifference, UpDifference, UpDifference), flags);
+		imshow("mask", g_maskImage);
+	}
+	else
+	{
+		area = floodFill(dst, seed, newVal, &ccomp, Scalar(LowDifference, LowDifference, LowDifference),
+			Scalar(UpDifference, UpDifference, UpDifference), flags);
+	}
+	imshow("2D Extraction", dst);
+	imwrite("planeExtract.jpg", dst);
+	cout << area << " 个像素被重绘\n";
+}
+
 void Draw3DLine()
 {
+	/*--------------Draw Line Detection--------------*/
+	/*Mat srcImage = ROI_Image.clone();
+	Mat midImage, dstImage;
 
+	Canny(srcImage, midImage, 50, 200, 3);
+	cvtColor(midImage, dstImage, COLOR_GRAY2BGR);
+
+	vector<Vec4i> lines;
+	RNG rng(12345);
+	HoughLinesP(midImage, lines, 1, CV_PI / 180, 80, 50, 10);
+	Mat drawing = Mat::zeros(dstImage.size(), CV_8UC3);
+	for (size_t i = 0; i < lines.size(); i++)
+	{
+	Vec4i l = lines[i];
+	line(drawing, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255)), 1, LINE_AA);
+	}
+	imshow("ROI to extract", srcImage);
+	imshow("2D hough line", drawing);
+	waitKey(0);*/
+	/*--------------Draw Contours Detection--------------*/
+	Mat srcImage = ROI_Image.clone();
+	Mat dstImage;
+	cvtColor(srcImage, dstImage, CV_BGR2GRAY);
+	Canny(dstImage, dstImage, 100, 200, 3);
+	vector<vector<Point>> contours;
+	vector<Vec4i> hierarchy;
+	RNG rng(12345);
+	findContours(dstImage, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0));
+	Mat drawing = ROI_Image.clone();
+	for (int i = 0; i < contours.size(); i++)
+	{
+		for (int j = 0; j < contours[i].size(); j++)
+		{
+			Scalar color = Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+			drawContours(drawing, contours, i, color, 2, 8, hierarchy, 0, Point());
+			//cout << "Point(x,y)=" <<  contours[i][j] << endl;
+		}
+	}
+	//imshow("2D Contour", drawing);
+	//waitKey(0);
+	imwrite("drawing.jpg", drawing);
+	//在这里不能够直接读取drawing的值，因为drawing是视频而不是图片，而floodfill只能读取图片，而且是RGB图片
+	g_srcImage = imread("drawing.jpg", 1);
+	g_srcImage.copyTo(g_dstImage);
+	cvtColor(g_srcImage, g_grayImage, COLOR_BGR2GRAY);
+	g_maskImage.create(g_srcImage.rows + 2, g_srcImage.cols + 2, CV_8UC1);
+
+	namedWindow("2D Extraction", WINDOW_AUTOSIZE);
+	createTrackbar("负差最大值", "效果图", &g_nLowDifference, 255, 0);
+	createTrackbar("正差最大值", "效果图", &g_nUpDifference, 255, 0);
+
+	setMouseCallback("2D Extraction", onMouse3D, 0);
+	while (1)
+	{
+		imshow("2D Extraction", g_bIsColor ? g_dstImage : g_grayImage);
+		//获取键盘按键
+		int c = waitKey(0);
+		//判断ESC是否按下，若按下便退出
+		if ((c & 255) == 27)
+		{
+			cout << "程序退出...........\n";
+			break;
+		}
+		//根据按键的不同，进行各种操作
+		switch ((char)c)
+		{
+			//如果键盘“1”被按下，效果图在在灰度图，彩色图之间互换
+		case '1':
+			if (g_bIsColor)//若原来为彩色，转为灰度图，并且将掩膜mask所有元素设置为0
+			{
+				cout << "键盘“1”被按下，切换彩色/灰度模式，当前操作为将【彩色模式】切换为【灰度模式】\n";
+				cvtColor(g_srcImage, g_grayImage, COLOR_BGR2GRAY);
+				g_maskImage = Scalar::all(0);	//将mask所有元素设置为0
+				g_bIsColor = false;	//将标识符置为false，表示当前图像不为彩色，而是灰度
+			}
+			else//若原来为灰度图，便将原来的彩图image0再次拷贝给image，并且将掩膜mask所有元素设置为0
+			{
+				cout << "键盘“1”被按下，切换彩色/灰度模式，当前操作为将【彩色模式】切换为【灰度模式】\n";
+				g_srcImage.copyTo(g_dstImage);
+				g_maskImage = Scalar::all(0);
+				g_bIsColor = true;//将标识符置为true，表示当前图像模式为彩色
+			}
+			break;
+			//如果键盘按键“2”被按下，显示/隐藏掩膜窗口
+		case '2':
+			if (g_bUseMask)
+			{
+				destroyWindow("mask");
+				g_bUseMask = false;
+			}
+			else
+			{
+				namedWindow("mask", 0);
+				g_maskImage = Scalar::all(0);
+				imshow("mask", g_maskImage);
+				g_bUseMask = true;
+			}
+			break;
+			//如果键盘按键“3”被按下，恢复原始图像
+		case '3':
+			cout << "按键“3”被按下，恢复原始图像\n";
+			g_srcImage.copyTo(g_dstImage);
+			cvtColor(g_dstImage, g_grayImage, COLOR_BGR2GRAY);
+			g_maskImage = Scalar::all(0);
+			break;
+			//如果键盘按键“4”被按下，使用空范围的漫水填充
+		case '4':
+			cout << "按键“4”被按下，使用空范围的漫水填充\n";
+			g_nFillMode = 0;
+			break;
+			//如果键盘按键“5”被按下，使用渐变、固定范围的漫水填充
+		case '5':
+			cout << "按键“5”被按下，使用渐变、固定范围的漫水填充\n";
+			g_nFillMode = 1;
+			break;
+			//如果键盘按键“6”被按下，使用渐变、浮动范围的漫水填充
+		case '6':
+			cout << "按键“6”被按下，使用渐变、浮动范围的漫水填充\n";
+			g_nFillMode = 2;
+			break;
+			//如果键盘按键“7”被按下，操作标志符的低八位使用4位的连接模式
+		case '7':
+			cout << "按键“7”被按下，操作标志符的低八位使用4位的连接模式\n";
+			g_nConnectivity = 4;
+			break;
+			//如果键盘按键“8”被按下，操作标志符的低八位使用8位的连接模式
+		case '8':
+			cout << "按键“8”被按下，操作标志符的低八位使用8位的连接模式\n";
+			g_nConnectivity = 8;
+			break;
+		case '9':
+			destroyWindow("2D Extraction");
+			Draw3DPlane();
+			break;
+		}
+	}
+
+	//waitKey(0);
+}
+
+vector<MatND> getHSVHist(Mat &src)
+{
+	//输入图片得是三通道彩色图片
+	assert(!src.empty() && src.channels() == 3);
+
+	//rgb转hsv图像
+	Mat hsv;
+	cvtColor(src, hsv, CV_BGR2HSV);
+
+	//h的范围是0~180，所以选取30个bin
+	//s和v的范围都是0~255，那就选择51个bin
+	int hbins = 30;
+	int sbins = 51;
+	int vbins = 51;
+	int hHistSize[] = { hbins };
+	int sHistSize[] = { sbins };
+	int vHistSize[] = { vbins };
+
+	float hranges[] = { 0, 180 };
+	float sranges[] = { 0, 255 };
+	float vranges[] = { 0, 255 };
+	const float* hRanges[] = { hranges };
+	const float* sRanges[] = { sranges };
+	const float* vRanges[] = { vranges };
+	vector<MatND> hist;
+
+	int hChannels[] = { 0 };
+	int sChannels[] = { 1 };
+	int vChannels[] = { 2 };
+
+	MatND hHist, sHist, vHist;
+	calcHist(&hsv, 1, hChannels, Mat(), hHist, 1, hHistSize, hRanges);
+	calcHist(&hsv, 1, sChannels, Mat(), sHist, 1, sHistSize, sRanges);
+	calcHist(&hsv, 1, vChannels, Mat(), vHist, 1, vHistSize, vRanges);
+
+	hist.push_back(hHist);
+	hist.push_back(sHist);
+	hist.push_back(vHist);
+
+	normalize(hist[0], hist[0], 0, 1, NORM_MINMAX, -1, Mat());
+	normalize(hist[1], hist[1], 0, 1, NORM_MINMAX, -1, Mat());
+	normalize(hist[2], hist[2], 0, 1, NORM_MINMAX, -1, Mat());
+
+	int i;
+	int start = -1, end = -1;
+	for (i = 0; i < 30; i++)
+	{
+		float value = hist[0].at<float>(i);
+		if (value  > 0)
+		{
+			if (start == -1)
+			{
+				start = i;
+				end = i;
+			}
+			else
+				end = i;
+			std::cout << "H Value" << i << ": " << value << endl;
+		}
+		else
+		{
+			if (start != -1)
+				std::cout << "H:" << start * 6 << "~" << (end + 1) * 6 - 1 << endl;
+			start = end = -1;
+		}
+	}
+	if (start != -1)
+		std::cout << "H:" << start * 5 << "~" << (end + 1) * 5 - 1 << endl;
+
+	start = -1, end = -1;
+	for (i = 0; i < 51; i++)
+	{
+		float value = hist[1].at<float>(i);
+		if (value  > 0)
+		{
+			if (start == -1)
+			{
+				start = i;
+				end = i;
+			}
+			else
+				end = i;
+			std::cout << "S Value" << i << ": " << value << endl;
+		}
+		else
+		{
+			if (start != -1)
+				std::cout << "S:" << start * 5 << "~" << (end + 1) * 5 - 1 << endl;
+			start = end = -1;
+		}
+	}
+	if (start != -1)
+		std::cout << "S:" << start * 5 << "~" << (end + 1) * 5 - 1 << endl;
+
+	start = -1, end = -1;
+	for (i = 0; i < 51; i++)
+	{
+		float value = hist[2].at<float>(i);
+		if (value  > 0)
+		{
+			if (start == -1)
+			{
+				start = i;
+				end = i;
+			}
+			else
+				end = i;
+			std::cout << "V Value" << i << ": " << value << endl;
+		}
+		else
+		{
+			if (start != -1)
+				std::cout << "V:" << start * 5 << "~" << (end + 1) * 5 - 1 << endl;
+			start = end = -1;
+		}
+	}
+	if (start != -1)
+		std::cout << "V:" << start * 5 << "~" << (end + 1) * 5 - 1 << endl;
+
+	return hist;
+}
+
+void filteredBlue(const Mat &inputImage, Mat &resultGray, Mat &resultColor){
+	Mat hsvImage;
+	cvtColor(inputImage, hsvImage, CV_BGR2HSV);
+	resultGray = Mat(hsvImage.rows, hsvImage.cols, CV_8U, cv::Scalar(255));
+	resultColor = Mat(hsvImage.rows, hsvImage.cols, CV_8UC3, cv::Scalar(255, 255, 255));
+	double H = 0.0, S = 0.0, V = 0.0;
+	for (int i = 0; i < hsvImage.rows; i++)
+	{
+		for (int j = 0; j < hsvImage.cols; j++)
+		{
+			H = hsvImage.at<Vec3b>(i, j)[0];
+			S = hsvImage.at<Vec3b>(i, j)[1];
+			V = hsvImage.at<Vec3b>(i, j)[2];
+
+			if ((V >= 250 && V < 255))
+			{
+				if ((H >= 120 && H < 125))
+				{
+					resultGray.at<uchar>(i, j) = 0;
+					resultColor.at<Vec3b>(i, j)[0] = inputImage.at<Vec3b>(i, j)[0];
+					resultColor.at<Vec3b>(i, j)[1] = inputImage.at<Vec3b>(i, j)[1];
+					resultColor.at<Vec3b>(i, j)[2] = inputImage.at<Vec3b>(i, j)[2];
+				}
+			}
+		}
+	}
 }
 
 void Draw3DPlane()
 {
+	//颜色转换 http://blog.csdn.net/jianjian1992/article/details/51274834
+	//OpenCV像素操作 https://www.kancloud.cn/digest/usingopencv/145307
+	Mat d_srcImage = imread("planeExtract.jpg", 1);
+	Mat d_dstImage;
+	Mat color_gray;
 
+	//颜色直方图获取颜色的H,S,V的值
+	/*Mat color_src = imread("bluePlane.jpg", 1);
+	getHSVHist(color_src);*/
+
+	filteredBlue(d_srcImage, color_gray, d_dstImage);
+
+	imwrite("2d_plane_recognition.jpg", d_dstImage);
+	imshow("2d plane recognition", d_dstImage);
+	imshow("gray", color_gray);
+
+	int rows = d_dstImage.rows;
+	int cols = d_dstImage.cols;
+
+	PlanePixel = new Point2i[100000];
+
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			int b = d_dstImage.at<Vec3b>(i, j)[0];
+			int g = d_dstImage.at<Vec3b>(i, j)[1];
+			int r = d_dstImage.at<Vec3b>(i, j)[2];
+
+			if (b >= 250 && g <= 5 && r <= 5)
+			{
+				PlanePixel[PlanePixelcount].x = j + ROI_p1.x;
+				PlanePixel[PlanePixelcount].y = i + ROI_p1.y;
+
+
+				PlanePixelcount++;
+
+			}
+		}
+	}
+	cout << "PlanePixelcount的值 = " << PlanePixelcount << endl;
+	for (int i = 0; i < PlanePixelcount; i++)
+	{
+		int index3 = PlanePixel[i].x + PlanePixel[i].y*iWidthColor;
+		//cout << "PlanePixel[i].x = " << PlanePixel[i].x << endl;
+		if (pCSPoints[index3].Z != -1 * numeric_limits<float>::infinity())
+		{
+			Planedepthcount++;
+		}
+	}
+	cout << "PlanePixel中z有意义的点有 " << Planedepthcount << "个\n";
+	delete[] PlanePixel;
+	//cout << "--------------------------\n";
 }
 
 void DrawMeshes()
@@ -826,12 +1253,12 @@ void DrawMeshes()
 	if (!BG_IS_OPEN)
 	{
 		glPushMatrix();
-		glBegin(GL_TRIANGLE_STRIP/*GL_TRIANGLES*/);
-		for (int i = 0; i < colorPointCount; i += 3)//3计
+		glBegin(GL_TRIANGLE_STRIP);
+		for (int i = 0; i < colorPointCount; i += 3)//
 		{
 
 			glColor3ub(pBufferColor[4 * i], pBufferColor[4 * i + 1], pBufferColor[4 * i + 2]);
-			if (/*i % iWidthColor < (iWidthColor - 1) &&*/ i < iWidthColor*(iHeightColor - 1))
+			if (i < iWidthColor*(iHeightColor - 1))
 			{
 				glVertex3f(pCSPoints[i].X, pCSPoints[i].Y, -pCSPoints[i].Z);
 				glVertex3f(pCSPoints[i + iWidthColor].X, pCSPoints[i + iWidthColor].Y, -pCSPoints[i + iWidthColor].Z);
@@ -887,11 +1314,13 @@ int glPrintf(const char *format, ...)
 			OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
 			FF_DONTCARE | DEFAULT_PITCH, szFace);
 	}
+
 	float p0[4], p1[4], c0[2][4] = { { 0, 0, 0, 1 }, { 1, 1, 1, 1 } };
 	int i, j, len, offset[2] = { 1, 0 };
 	wchar_t *wstr;
 	GLint viewport[4];
 	HDC hdc = 0;
+
 	glGetIntegerv(GL_VIEWPORT, viewport);                  // get view-port, set projection matrix needed
 	glGetFloatv(GL_CURRENT_RASTER_POSITION, p0);           // get raster position, use this to calculate the coordinate when changing line
 	glPushAttrib(GL_LIGHTING_BIT | GL_DEPTH_BUFFER_BIT);   // push attributes, be prepared for initialization

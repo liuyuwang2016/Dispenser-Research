@@ -244,6 +244,34 @@ void RenderScene()
 		glEnd();
 		glPopMatrix();
 	}
+
+	if (Planedepthcount != 0)
+	{
+		glPushMatrix();
+		glPointSize(2.0f);
+		glBegin(GL_POINTS);
+		CameraSpacePoint* temp = new CameraSpacePoint[Planedepthcount];
+		int index4 = 0;
+		for (int i = 0; i < PlanePixelcount; i++)
+		{
+			glColor3ub(0, 127, 255);
+			int index5 = PlanePixel[i].x + PlanePixel[i].y * iWidthColor;
+			if (pCSPoints[index5].Z != -1 * numeric_limits<float>::infinity())
+			{
+				temp[index4].X = pCSPoints[index5].X;
+				temp[index4].Y = pCSPoints[index5].Y;
+				temp[index4].Z = -pCSPoints[index5].Z;
+				glVertex3f(temp[index4].X, temp[index4].Y, temp[index4].Z);
+				index4++;
+			}
+			cout << "画出来了" << index4 << "个" << endl;
+		}
+		delete[] temp;
+		glEnd();
+		glPopMatrix();
+
+	}
+
 	/*--------------Collision Detection-------------*/
 	if (ROIDepthCount != 0 && ARFunc_IS_ON)
 	{
@@ -253,8 +281,8 @@ void RenderScene()
 		glLoadIdentity();
 		//移动到原点d
 		glMultMatrixf(M_Cubic_inv);
+		//把笔的坐标移动到机器坐标原点
 		glTranslatef(-Intersect.X, -Intersect.Y, -Intersect.Z);
-
 		glTranslatef(-ObjPosi.x, -ObjPosi.y, -ObjPosi.z);
 		//http://blog.csdn.net/lyx2007825/article/details/8792475
 		//http://blog.csdn.net/hippig/article/details/7894034
@@ -302,6 +330,7 @@ void RenderScene()
 							/*the circle of the obj*/
 							CollideCount_Circle++;
 							break;
+							//上面的所有case都不为真
 						default:
 							CollideCount++;
 							break;
@@ -311,11 +340,12 @@ void RenderScene()
 				gCount++;
 				group = group->next;
 			}
+
 			if (CollideCount_Circle == 0)
 			{
 				ROI_IS_COLLIDE = FALSE;
 			}
-			else if (CollideCount >= OBJ->numtriangles - 76)
+			else if (CollideCount == OBJ->numtriangles - 76)
 			{
 				ROI_IS_COLLIDE = TRUE;
 				break;
@@ -324,6 +354,7 @@ void RenderScene()
 			CollideCount_Circle = 0;
 		}
 	}
+
 	/*--------------AR Function-------------*/
 	/*find depth points and do not collide, call ARFunc_FindProj()*/
 	if (ROIDepthCount > 0 && !ROI_IS_COLLIDE)
@@ -346,31 +377,31 @@ void RenderScene()
 			float dist = ARFunc_ROICSP_Proj_Dist * 1000;
 			const int low_range = 30, high_range = 100;
 			int low_r = 1, high_r = 0, low_g = 0, high_g = 1;
-			float rr = 0, gg = 0, bb = 0;
+			float Red = 0, Green = 0, Blue = 0;
 			/*change the color of the line by the distance range*/
 			if (dist > high_range)
 			{
-				rr = 0;
-				gg = 1;
-				bb = 0;
+				Red = 0;
+				Green = 1;
+				Blue = 0;
 			}
 			else if (dist < low_range)
 			{
-				rr = 1;
-				gg = 0;
-				bb = 0;
+				Red = 1;
+				Green = 0;
+				Blue = 0;
 			}
 			else
 			{
-				rr = (dist - low_range) / ((low_range + high_range) - low_range) * (high_r - low_r) + low_r;
-				gg = (dist - (low_range + high_range)) / (high_range - (low_range + high_range)) * (high_g - low_g) + low_g;
-				bb = -1.0f / pow((high_range - low_range) / 2, 2) * pow((dist - (low_range + high_range) / 2), 2) + 1.0f;
+				Red = (dist - low_range) / ((low_range + high_range) - low_range) * (high_r - low_r) + low_r;
+				Green = (dist - (low_range + high_range)) / (high_range - (low_range + high_range)) * (high_g - low_g) + low_g;
+				Blue = -1.0f / pow((high_range - low_range) / 2, 2) * pow((dist - (low_range + high_range) / 2), 2) + 1.0f;
 			}
-			//cout << rr << " " << gg << " " << bb << endl;
+
 			/* draw line */
 			glEnable(GL_LINE_STIPPLE);
 			glPushMatrix();
-			glColor3f(rr, gg, bb);
+			glColor3f(Red, Green, Blue);
 			glLineWidth(2.5);
 			glLineStipple(1, 0x1C47);
 			glBegin(GL_LINES);
@@ -411,7 +442,7 @@ void RenderScene()
 		//http://cuiqingcai.com/1658.html 旋转示例
 		glRotatef(-90, 1, 0, 0);
 		//glMultMatrixf(const GLfloat *m);//把m指定的16个值作为一个矩阵，与当前矩阵相乘，并把结果存储在当前矩阵中 
-		//glMultMatrix 假设当前矩阵式C那么用矩阵M 调用glMultMatrix 对顶点v的变换就从原来的C*v变成C * M * v
+		//glMultMatrix 假设当前矩阵是C那么用矩阵M 调用glMultMatrix 对顶点v的变换就从原来的C*v变成C * M * v
 		//http://blog.csdn.net/mathgeophysics/article/details/11434345
 		glMultMatrixf(M_Cubic_inv);
 		glTranslatef(-Intersect.X, -Intersect.Y, -Intersect.Z);
@@ -437,6 +468,7 @@ void RenderScene()
 		ROICameraSP_Proj_MechCoord->Z = ARFunc_ROICSP_Proj->Z;
 
 		ROITrans(ROICameraSP_MechCoord, 1, TransM_toMechCoord, ROICameraSP_MechCoord);
+
 		ROITrans(ROICameraSP_Proj_MechCoord, 1, TransM_toMechCoord, ROICameraSP_Proj_MechCoord);
 
 		ROICameraSP_MechCoord->Y = -ROICameraSP_MechCoord->Y;
@@ -446,7 +478,6 @@ void RenderScene()
 	/*--------------Draw Storage Point-------------*/
 	if (ROIStorageCount > 0)
 	{
-		//cout << ROIStorageCount << endl;
 		glPushMatrix();
 		glPointSize(5.0f);
 		if (CUBIC_MOVE)
@@ -529,6 +560,7 @@ void RenderScene()
 	}
 
 	glTranslatef(DeviaDueToY->X, DeviaDueToY->Y, DeviaDueToY->Z);
+
 	DrawCubic();
 	//ARFunc_IS_ON = FALSE;
 	if (Cubic_IS_BLEND)
@@ -554,28 +586,28 @@ void RenderScene()
 		float dist = ARFunc_ROICSP_Proj_Dist * 1000;
 		const int low_range = 30, high_range = 100;
 		int low_r = 1, high_r = 0, low_g = 0, high_g = 1;
-		float rr = 0, gg = 0, bb = 0;
+		float Red = 0, Green = 0, Blue = 0;
 		if (dist > high_range)
 		{
-			rr = 0;
-			gg = 1;
-			bb = 0;
+			Red = 0;
+			Green = 1;
+			Blue = 0;
 		}
 		else if (dist < low_range)
 		{
-			rr = 1;
-			gg = 0;
-			bb = 0;
+			Red = 1;
+			Green = 0;
+			Blue = 0;
 		}
 		else
 		{
-			rr = (dist - low_range) / ((low_range + high_range) - low_range) * (high_r - low_r) + low_r;
-			gg = (dist - (low_range + high_range)) / (high_range - (low_range + high_range)) * (high_g - low_g) + low_g;
-			bb = -1.0f / pow((high_range - low_range) / 2, 2) * pow((dist - (low_range + high_range) / 2), 2) + 1.0f;
+			Red = (dist - low_range) / ((low_range + high_range) - low_range) * (high_r - low_r) + low_r;
+			Green = (dist - (low_range + high_range)) / (high_range - (low_range + high_range)) * (high_g - low_g) + low_g;
+			Blue = -1.0f / pow((high_range - low_range) / 2, 2) * pow((dist - (low_range + high_range) / 2), 2) + 1.0f;
 		}
 		/*--------------Show Prob Tip Coordinate. on Screen-------------*/
 		glPushMatrix();
-		glColor3f(rr, gg, bb);
+		glColor3f(Red, Green, Blue);
 		if (IS_ARFunc_InsideTriCheck && !ROI_IS_COLLIDE)
 		{
 			glPrintf(">>glut(%i, %i)", ROICenterColorS_Old.x + 10, ROICenterColorS_Old.y + 15);
@@ -603,9 +635,10 @@ void DrawCubic()
 	glTranslatef(CubicPosi.x, CubicPosi.y, CubicPosi.z);
 	glTranslatef(ObjPosi.x, ObjPosi.y, ObjPosi.z);
 	/*Interact: the center red point of three-Axis dispenser's translate value*/
+	//glTranslatef(0.3, -0.2, -1);
 	glTranslatef(Intersect.X, Intersect.Y, Intersect.Z);
 	glMultMatrixf(M_Cubic);
-	//glRotatef(-90, 0, 0, 1);
+
 	glEnable(GL_TEXTURE_2D);
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
@@ -651,7 +684,6 @@ void DrawCubic()
 	glDisable(GL_TEXTURE_2D);
 	glPopMatrix();
 }
-
 #pragma endregion DrawCubic Function
 
 #pragma region Kinect Function
@@ -659,7 +691,6 @@ void DrawCubic()
 /*--------------Kinect Function-------------*/
 /*------------------------------------------*/
 /*------------------------------------------ The first Step ------------------------------------------*/
-
 void KinectInit()
 {
 	// 1. Sensor related code
@@ -752,6 +783,7 @@ void KinectInit()
 		pFrameSource->Release();
 		pFrameSource = nullptr;
 	}
+	//pixelFiltering(depthImage);
 	// 4. Coordinate Mapper
 	if (pSensor->get_CoordinateMapper(&Mapper) != S_OK)
 	{
@@ -811,10 +843,7 @@ void KinectUpdate()
 	}
 	/*--------------Mapper Function (Point Cloud)-------------*/
 	Mapper->MapColorFrameToCameraSpace(depthPointCount, pBufferDepth, colorPointCount, pCSPoints);
-	//blur(mDepthImg, mDepthImg, Size(3, 3));
-	//GaussianBlur(mDepthImg, mDepthImg, Size(3, 3), 0, 0);
-	//pBufferDepth = reinterpret_cast<UINT16*>(mDepthImg.data);
-	//Mapper->MapColorFrameToCameraSpace(depthPointCount, pBufferDepth, colorPointCount, pCSPoints);
+
 	/*--------------Call Window Function-------------*/
 	/*show image can have a color frame to you*/
 	ShowImage();
@@ -822,20 +851,15 @@ void KinectUpdate()
 
 void ShowImage()
 {
-	/*在这里就是读出 color map，其中 depth 的被删掉了*/
+	/*在这里就是读出 color map, 其中 depth 的被删掉了*/
 	/*open a color map, the depth map was deleted by debby lee*/
-	namedWindow("Color Map");
+	namedWindow("ROI Map", WINDOW_AUTOSIZE);
 
 	/*--------------Set Mouse Callback Function and Find ROI-------------*/
 	/*-----------Use green box to get ROI by mouse-----------*/
-	cvSetMouseCallback("Color Map", onMouseROI, NULL);//鼠标事件发生的时候被调用的函数指针
-	if (ROI.data != NULL)
-	{
-		ROI.release();
-	}
+	cvSetMouseCallback("ROI Map", onMouseROI, NULL);//鼠标事件发生的时候被调用的函数指针
 	mColorImg.copyTo(ROI);
-
-	// finish or not finish the ROI getting process
+	//// finish or not finish the ROI getting process
 	if (ROI_S2 == TRUE && ROI_S1 == FALSE)
 	{
 		int thickness = 2;
@@ -843,9 +867,10 @@ void ShowImage()
 		/*when the code make sure that the ROI Rec has been done. Use FindROI to do color tracking*/
 		FindROI();
 	}
-	cv::imshow("Color Map", ROI);
+	//opencv需要编译 http://blog.csdn.net/github_28833431/article/details/48226291
+	//不是opencv编译的问题，在这里如果关闭集显的话不能debug
+	imshow("ROI Map", ROI);
 }
-
 #pragma endregion Kinect Function
 
 #pragma region ROI Function
@@ -856,42 +881,44 @@ void onMouseROI(int event, int x, int y, int flags, void* param)
 {
 	int thickness = 2;
 	//Push
-	if (event == CV_EVENT_LBUTTONDOWN)
+	switch (event)
 	{
-		ROI_rect.x = x;
-		ROI_rect.y = y;
-		ROI_S1 = TRUE;
-		ROI_S2 = FALSE;
+	case EVENT_LBUTTONDOWN:
+	{
+							  ROI_rect.x = x;
+							  ROI_rect.y = y;
+							  ROI_S1 = TRUE;
+							  ROI_S2 = FALSE;
 	}
-	//Release
-	else if (event == CV_EVENT_LBUTTONUP)
+		break;
+	case EVENT_LBUTTONUP:
 	{
-		ROI_S1 = FALSE;
-		ROI_rect.height = y - ROI_rect.y;
-		ROI_rect.width = x - ROI_rect.x;
-		ROI_p2 = Point(x, y);
+							ROI_S1 = FALSE;
+							ROI_rect.height = y - ROI_rect.y;
+							ROI_rect.width = x - ROI_rect.x;
+							ROI_p2 = Point(x, y);
+	}
+		break;
 	}
 
-	mColorImg.copyTo(ROI);
 	//Drag
 	if (flags == CV_EVENT_FLAG_LBUTTON)
 	{
+		namedWindow("ROI Map", WINDOW_AUTOSIZE);
 		ROI_S2 = TRUE;
 		ROI_p1 = Point(ROI_rect.x, ROI_rect.y);
 		ROI_p2 = Point(x, y);
 		rectangle(ROI, ROI_p1, ROI_p2, Scalar(0, 255, 0), 2);
-		cv::imshow("Color Map", ROI);
+		cv::imshow("ROI Map", ROI);
 	}
 }
 
 void FindROI()
 {
-	Mat ROI_Image;
 	/*--------------Find ROI-------------*/
 	if (ROI_p2.x > ROI_p1.x && ROI_p2.y > ROI_p1.y)
 	{
 		/*get the ROI region that you choose by mouse*/
-		//ROI_Image = dstImage.colRange(ROI_p1.x, ROI_p2.x + 1).rowRange(ROI_p1.y, ROI_p2.y + 1).clone();
 		ROI_Image = mColorImg.colRange(ROI_p1.x, ROI_p2.x + 1).rowRange(ROI_p1.y, ROI_p2.y + 1).clone();
 	}
 	else
@@ -933,6 +960,7 @@ void FindROI()
 			uchar IsRed = 0;
 			/*input & output value, OpenCV matrix input & output value function*/
 			OutputValue(ROI_YCrCb, i, j, 1, &IsRed);
+
 			//threshold = 150 for fluorescent pink
 			//threshold = 170 for red
 			if (IsRed > 155)
@@ -956,9 +984,10 @@ void FindROI()
 	}
 	//imshow("ROI", ROI_Image);
 	/*If we got the color we want, do this*/
-	if (ROIcount > 0)
+	if (ROIcount > 3)
 	{
 		/*get the mean value */
+		//static_cast把后面的类型转换为int。
 		ROICenterColorS_New.x = static_cast<int>(ROICenterColorS_New.x / ROIcount);
 		ROICenterColorS_New.y = static_cast<int>(ROICenterColorS_New.y / ROIcount);
 		/*call mapper function*/
@@ -966,10 +995,11 @@ void FindROI()
 		/*tracking ROI, let the probe tip always in the center of ROI*/
 		MoveROI();
 	}
-	else if (ROIcount == 0)
+	else if (ROIcount <= 3)
 	{
 		ROICenterColorS_Old.x = ROICenterColorS_New.x = 0;
 		ROICenterColorS_Old.y = ROICenterColorS_New.y = 0;
+		Draw3DLine();
 	}
 }
 
@@ -990,6 +1020,7 @@ void CameraSpaceROI()
 	for (int i = 0; i < ROIcount; i++)
 	{
 		int index1 = ROIPixel[i].x + ROIPixel[i].y * iWidthColor;
+		//numeric_limits<float>::infinity()无穷大
 		if (pCSPoints[index1].Z != -1 * numeric_limits<float>::infinity())
 		{
 			ROIDepthCount++;
@@ -1000,7 +1031,6 @@ void CameraSpaceROI()
 	for (int i = 0; i < ROIcount; i++)
 	{
 		int indx2 = ROIPixel[i].x + ROIPixel[i].y * iWidthColor;
-		/*what does this mean?*/
 		if (pCSPoints[indx2].Z != -1 * numeric_limits<float>::infinity())
 		{
 			Temp[indx1].X = pCSPoints[indx2].X;
@@ -1100,16 +1130,22 @@ void MoveROI()
 		Vec2i Dir;
 
 		Point2i center;
+
 		center.x = (ROI_p1.x + ROI_p2.x) / 2;
 		center.y = (ROI_p1.y + ROI_p2.y) / 2;
+
 		Dir.val[0] = ROICenterColorS_New.x - center.x;
 		Dir.val[1] = ROICenterColorS_New.y - center.y;
+
 		ROI_p1.x = ROI_p1.x + Dir.val[0];
 		ROI_p1.y = ROI_p1.y + Dir.val[1];
+
 		ROI_p2.x = ROI_p2.x + Dir.val[0];
 		ROI_p2.y = ROI_p2.y + Dir.val[1];
+
 		ROICenterColorS_Old.x = ROICenterColorS_New.x;
 		ROICenterColorS_Old.y = ROICenterColorS_New.y;
+
 		ROICenterColorS_New.x = 0;
 		ROICenterColorS_New.y = 0;
 	}
@@ -1131,12 +1167,15 @@ void ROICameraSPStorage()
 		if (ROIStorageCount + 1 < StorageSize)
 		{
 			CameraSpacePoint Center;
+
 			Center.X = ROICenterCameraS.x;
 			Center.Y = ROICenterCameraS.y;
 			Center.Z = ROICenterCameraS.z;
+
 			//ROICameraSP_Storage[i + ROIStorageCount] = ROICameraSP[i];
 			ROICameraSP_Storage[ROIStorageCount] = Center;
 			ROICameraSP_Proj_Storage[ROIStorageCount] = *ARFunc_ROICSP_Proj/*Center*/;
+
 			ROICameraSP_MachineCoord_Storage[ROIStorageCount] = *ROICameraSP_MechCoord;
 			ROICameraSP_MachineCoord_Proj_Storage[ROIStorageCount] = *ROICameraSP_Proj_MechCoord;
 
@@ -1165,58 +1204,82 @@ void loadOBJModel()
 	if (OBJ != NULL) {
 		free(OBJ);
 	}
-	//OBJ = glmReadOBJ("box33/box5.obj");
-	//OBJ = glmReadOBJ("box33/456.obj");
-	OBJ = glmReadOBJ("box33/ScreenCubic/ScreenCubic2.obj");
-	//printf("%s\n", filename);
+	OBJ = glmReadOBJ("box33/456.obj");
+	//OBJ = glmReadOBJ("box33/ScreenCubic/ScreenCubic2.obj");
 	// traverse the color model
 	traverseModel();
-	//GLuint a = OBJ->numvertices;
-	//GLuint b = OBJ->numnormals;
-	//GLuint c = OBJ->numgroups;
 }
 
 /*It's traverseModel because we need to read the data column by column*/
 void traverseModel()
 {
 	GLMgroup* group = OBJ->groups;
+
 	float maxx, maxy, maxz;
 	float minx, miny, minz;
 	float dx, dy, dz;
+
 	maxx = minx = OBJ->vertices[3];
 	maxy = miny = OBJ->vertices[4];
 	maxz = minz = OBJ->vertices[5];
-	for (unsigned int i = 2; i <= OBJ->numvertices; i++) {
+
+	//cout << "Vertices[0]" << OBJ->vertices[0] << endl;
+	//cout << "Vertices[1]" << OBJ->vertices[1] << endl;
+	//cout << "Vertices[2]" << OBJ->vertices[2] << endl;
+	//0,1,2位置的值无效
+	//cout << "Vertices[3]" << OBJ->vertices[3] << endl;
+	//cout << "Vertices[4]" << OBJ->vertices[4] << endl;
+	//cout << "Vertices[5]" << OBJ->vertices[5] << endl;
+	//3,4,5的值为第一组v的值
+	//找最大最小值：三个维度
+	for (unsigned int i = 2; i <= OBJ->numvertices; i++)
+	{
 		GLfloat vx, vy, vz;
+
 		vx = OBJ->vertices[i * 3 + 0];
 		vy = OBJ->vertices[i * 3 + 1];
 		vz = OBJ->vertices[i * 3 + 2];
-		if (vx > maxx) maxx = vx;  if (vx < minx) minx = vx;
-		if (vy > maxy) maxy = vy;  if (vy < miny) miny = vy;
-		if (vz > maxz) maxz = vz;  if (vz < minz) minz = vz;
+
+		if (vx > maxx)
+			maxx = vx;
+		if (vx < minx)
+			minx = vx;
+		if (vy > maxy)
+			maxy = vy;
+		if (vy < miny)
+			miny = vy;
+		if (vz > maxz)
+			maxz = vz;
+		if (vz < minz)
+			minz = vz;
 	}
 	//printf("max\n%f %f, %f %f, %f %f\n", maxx, minx, maxy, miny, maxz, minz);
 	dx = maxx - minx;
 	dy = maxy - miny;
 	dz = maxz - minz;
+
 	//printf("dx,dy,dz = %f %f %f\n", dx, dy, dz);
-	GLfloat normalizationScale = myMax(myMax(dx, dy), dz) / 2;
+	//GLfloat normalizationScale = myMax(myMax(dx, dy), dz) / 2;
+
 	OBJ->position[0] = (maxx + minx) / 2;
 	OBJ->position[1] = (maxy + miny) / 2;
 	OBJ->position[2] = (maxz + minz) / 2;
 	int gCount = 0;
 	while (group) {
-		//printf("gCount: %i \n", gCount);
 		for (unsigned int i = 0; i < group->numtriangles; i++) {
-			//printf("numtriangles: %i \n", i);
+
 			// triangle index
 			int triangleID = group->triangles[i];
-			//printf("triangle index: %i \n", triangleID);
 
 			// the index of each vertex
 			int indv1 = OBJ->triangles[triangleID].vindices[0];
 			int indv2 = OBJ->triangles[triangleID].vindices[1];
 			int indv3 = OBJ->triangles[triangleID].vindices[2];
+
+			//在这里可以得到，见文件triangle.txt
+			/*cout << "OBJ->triangles["<<triangleID<<"].vindices[0] = " << OBJ->triangles[triangleID].vindices[0] << endl;
+			cout << "OBJ->triangles["<<triangleID<<"].vindices[1] = " << OBJ->triangles[triangleID].vindices[1] << endl;
+			cout << "OBJ->triangles["<<triangleID<<"].vindices[2] = " << OBJ->triangles[triangleID].vindices[2] << endl;*/
 
 			// vertices
 			GLfloat vx, vy, vz;
@@ -1226,12 +1289,17 @@ void traverseModel()
 			vx = OBJ->vertices[indv1 * 3];
 			vy = OBJ->vertices[indv1 * 3 + 1];
 			vz = OBJ->vertices[indv1 * 3 + 2];
-
+			//读三角形三个点
 			//printf("vertices1 %f %f %f\n", vx, vy, vz);
 			/* The model size's unit is mm but glm.h's size unit is m, so we use a scale to resize it\n*/
 			vertices[gCount][i * 9 + 0] = vx * scale;
 			vertices[gCount][i * 9 + 1] = vy * scale;
 			vertices[gCount][i * 9 + 2] = vz * scale;
+
+			//在这里可以得到，见文件vertices.txt
+			/*cout << "vertices[" << gCount << "][" << i  << " * 9]+0 = " << vertices[gCount][i * 9 + 0] << endl;
+			cout << "vertices[" << gCount << "][" << i << " * 9]+1 = " << vertices[gCount][i * 9 + 1] << endl;
+			cout << "vertices[" << gCount << "][" << i  << " * 9]+2 = " << vertices[gCount][i * 9 + 2] << endl;*/
 
 			vx = OBJ->vertices[indv2 * 3];
 			vy = OBJ->vertices[indv2 * 3 + 1];
@@ -1248,7 +1316,7 @@ void traverseModel()
 			vertices[gCount][i * 9 + 6] = vx * scale;
 			vertices[gCount][i * 9 + 7] = vy * scale;
 			vertices[gCount][i * 9 + 8] = vz * scale;
-
+			//三角形三个点的normal的index
 			int indn1 = OBJ->triangles[triangleID].nindices[0];
 			int indn2 = OBJ->triangles[triangleID].nindices[1];
 			int indn3 = OBJ->triangles[triangleID].nindices[2];
@@ -1273,6 +1341,7 @@ void traverseModel()
 			vtextures[gCount][i * 6 + 0] = OBJ->texcoords[indt1 * 2 + 0];
 			vtextures[gCount][i * 6 + 1] = OBJ->texcoords[indt1 * 2 + 1];
 			vtextures[gCount][i * 6 + 2] = OBJ->texcoords[indt2 * 2 + 0];
+
 			vtextures[gCount][i * 6 + 3] = OBJ->texcoords[indt2 * 2 + 1];
 			vtextures[gCount][i * 6 + 4] = OBJ->texcoords[indt3 * 2 + 0];
 			vtextures[gCount][i * 6 + 5] = OBJ->texcoords[indt3 * 2 + 1];
@@ -1281,6 +1350,7 @@ void traverseModel()
 		gCount++;
 		//vertices;
 	}
+	//cout << "gcount " << gCount << endl;
 }
 
 void SetTexObj(char *filename, int ii)
@@ -1291,7 +1361,6 @@ void SetTexObj(char *filename, int ii)
 	//cvShowImage("HelloWorld", imageCV);
 	//cvWaitKey(0); // 停留視窗
 	char *imageGL;
-	//imageGL = (unsigned char *)malloc(imageCV->nChannels * imageCV->height*imageCV->width *sizeof(unsigned char *));
 	imageGL = new char[3 * imageCV->height*imageCV->width];
 	int step = imageCV->width * imageCV->nChannels;
 	for (int i = 0; i < imageCV->height; i++)
@@ -1342,26 +1411,60 @@ void ARFunc_FindProj()
 	/*-----------------------------------*/
 	CameraSpacePoint* CubeTop = new CameraSpacePoint[4];
 	//input .obj file's top surface's 4 points
-	CubeTop[0].X = OBJ->vertices[3 * 48 + 0] * 0.001; //0.0000
-	CubeTop[0].Y = OBJ->vertices[3 * 48 + 1] * 0.001; //70.0000
-	CubeTop[0].Z = OBJ->vertices[3 * 48 + 2] * 0.001; //80.0000
+	//CubeTop[0].X = OBJ->vertices[3 * 48 + 0] * 0.001; //0.0000
+	//CubeTop[0].Y = OBJ->vertices[3 * 48 + 1] * 0.001; //70.0000
+	//CubeTop[0].Z = OBJ->vertices[3 * 48 + 2] * 0.001; //80.0000
 
-	CubeTop[1].X = OBJ->vertices[3 * 43 + 0] * 0.001; //150.000
-	CubeTop[1].Y = OBJ->vertices[3 * 43 + 1] * 0.001; //70.0000
-	CubeTop[1].Z = OBJ->vertices[3 * 43 + 2] * 0.001; //80.0000
+	//CubeTop[1].X = OBJ->vertices[3 * 43 + 0] * 0.001; //150.000
+	//CubeTop[1].Y = OBJ->vertices[3 * 43 + 1] * 0.001; //70.0000
+	//CubeTop[1].Z = OBJ->vertices[3 * 43 + 2] * 0.001; //80.0000
 
-	CubeTop[2].X = OBJ->vertices[3 * 50 + 0] * 0.001; //150.000
-	CubeTop[2].Y = OBJ->vertices[3 * 50 + 1] * 0.001; //70.000
-	CubeTop[2].Z = OBJ->vertices[3 * 50 + 2] * 0.001; //0.000
+	//CubeTop[2].X = OBJ->vertices[3 * 50 + 0] * 0.001; //150.000
+	//CubeTop[2].Y = OBJ->vertices[3 * 50 + 1] * 0.001; //70.000
+	//CubeTop[2].Z = OBJ->vertices[3 * 50 + 2] * 0.001; //0.000
 
-	CubeTop[3].X = OBJ->vertices[3 * 1 + 0] * 0.001; //0.0000
-	CubeTop[3].Y = OBJ->vertices[3 * 1 + 1] * 0.001; //70.000
-	CubeTop[3].Z = OBJ->vertices[3 * 1 + 2] * 0.001; //0.00
+	//CubeTop[3].X = OBJ->vertices[3 * 1 + 0] * 0.001; //0.0000
+	//CubeTop[3].Y = OBJ->vertices[3 * 1 + 1] * 0.001; //70.000
+	//CubeTop[3].Z = OBJ->vertices[3 * 1 + 2] * 0.001; //0.00
+
+	CubeTop[0].X = OBJ->vertices[3 * 1 + 0] * 0.001; //0.0000
+	CubeTop[0].Y = OBJ->vertices[3 * 1 + 1] * 0.001; //70.0000
+	CubeTop[0].Z = OBJ->vertices[3 * 1 + 2] * 0.001; //80.0000
+
+	CubeTop[1].X = OBJ->vertices[3 * 32 + 0] * 0.001; //150.000
+	CubeTop[1].Y = OBJ->vertices[3 * 32 + 1] * 0.001; //70.0000
+	CubeTop[1].Z = OBJ->vertices[3 * 32 + 2] * 0.001; //80.0000
+
+	CubeTop[2].X = OBJ->vertices[3 * 44 + 0] * 0.001; //150.000
+	CubeTop[2].Y = OBJ->vertices[3 * 44 + 1] * 0.001; //70.000
+	CubeTop[2].Z = OBJ->vertices[3 * 44 + 2] * 0.001; //0.000
+
+	CubeTop[3].X = OBJ->vertices[3 * 4 + 0] * 0.001; //0.0000
+	CubeTop[3].Y = OBJ->vertices[3 * 4 + 1] * 0.001; //70.000
+	CubeTop[3].Z = OBJ->vertices[3 * 4 + 2] * 0.001; //0.00
+
+
 	CameraSpacePoint* CubeNorm = new CameraSpacePoint[2];
+	//测试得知OBJ->vertices[3 * 1 + 0]就是文件中的第一个vertices
+	/*cout << " OBJ->vertices[3 * 1 + 0] = " << OBJ->vertices[3 * 1 + 0] << endl;
+	cout << " OBJ->vertices[3 * 1 + 1] = " << OBJ->vertices[3 * 1 + 1] << endl;
+	cout << " OBJ->vertices[3 * 1 + 2] = " << OBJ->vertices[3 * 1 + 2] << endl;
+	*/
+
 	//The normal vector of one of the triangles in the plane
-	CubeNorm[0].X = OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 0];
-	CubeNorm[0].Y = OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 1];
-	CubeNorm[0].Z = OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 2];
+	/*CubeNorm[0].X = OBJ->normals[OBJ->triangles[2].nindices[0] * 3 + 0];
+	CubeNorm[0].Y = OBJ->normals[OBJ->triangles[2].nindices[0] * 3 + 1];
+	CubeNorm[0].Z = OBJ->normals[OBJ->triangles[2].nindices[0] * 3 + 2];*/
+
+	CubeNorm[0].X = OBJ->normals[OBJ->triangles[145].nindices[0] * 3 + 0];
+	CubeNorm[0].Y = OBJ->normals[OBJ->triangles[145].nindices[0] * 3 + 1];
+	CubeNorm[0].Z = OBJ->normals[OBJ->triangles[145].nindices[0] * 3 + 2];
+
+	//结果为0, -1, 0(456obj)
+	//cout << "OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 0]= " << OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 0] << endl;
+	//cout << "OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 1]= " << OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 1] << endl;
+	//cout << "OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 2]= " << OBJ->normals[OBJ->triangles[3].nindices[0] * 3 + 2] << endl;
+
 	//start point & finish point
 	CubeNorm[1].X = 0;
 	CubeNorm[1].Y = 0;
@@ -1374,31 +1477,37 @@ void ARFunc_FindProj()
 	glTranslatef(ObjPosi.x, ObjPosi.y, ObjPosi.z);
 	glTranslatef(Intersect.X, Intersect.Y, Intersect.Z);
 	glMultMatrixf(M_Cubic);
-	//glRotatef(-90, 0, 0, 1);
-	glRotatef(180, 0, 0, 1);
+
 	glGetFloatv(GL_MODELVIEW_MATRIX, TransM_AR);
 	glPopMatrix();
+
 	ROITrans(CubeNorm, 2, TransM_AR, CubeNorm);
 	ROITrans(CubeTop, 4, TransM_AR, CubeTop);
+
 	//figure out the plane equation of top surface of .OBJ file
 	ARFuncNormal[0] = CubeNorm[0].X - CubeNorm[1].X;
 	ARFuncNormal[1] = CubeNorm[0].Y - CubeNorm[1].Y;
 	ARFuncNormal[2] = CubeNorm[0].Z - CubeNorm[1].Z;
 	ARFuncNormal[3] = -(ARFuncNormal[0] * CubeTop[0].X + ARFuncNormal[1] * CubeTop[0].Y + ARFuncNormal[2] * CubeTop[0].Z);
+
 	//Figure out the ROI center point to .OBJ file's projection point
 	CameraSpacePoint* ROICenter = new CameraSpacePoint;
 	ARFunc_ROICSP_Proj = new CameraSpacePoint;
 	ROICenter->X = ROICenterCameraS.x;
 	ROICenter->Y = ROICenterCameraS.y;
 	ROICenter->Z = ROICenterCameraS.z;
+
 	PathGenProjToPlane(ROICenter, 1, ARFuncNormal, ARFunc_ROICSP_Proj);
+
 	//ARFunc_ROICSP_Proj->Y = -ARFunc_ROICSP_Proj->Y;
 	GLMgroup* group = OBJ->groups;
 	group = group->next;
+	//cout << "group-> numtraingles = " << group->numtriangles << endl;
 	for (int TriCount = 0; TriCount < group->numtriangles; TriCount++)
 	{
 		int TriID = group->triangles[TriCount];
 		CameraSpacePoint TriVertex[3];
+
 		TriVertex[0].X = OBJ->vertices[OBJ->triangles[TriID].vindices[0] * 3 + 0] * 0.001;
 		TriVertex[0].Y = OBJ->vertices[OBJ->triangles[TriID].vindices[0] * 3 + 1] * 0.001;
 		TriVertex[0].Z = OBJ->vertices[OBJ->triangles[TriID].vindices[0] * 3 + 2] * 0.001;
@@ -1473,16 +1582,16 @@ int main(int argc, char** argv)
 	glutFullScreen();
 	glutSpecialFunc(SpecialKeys);
 	glutKeyboardFunc(Keyboard);
-	/*--------------above this do not need check again--------------*/
 	glutDisplayFunc(RenderScene);
-	//update
 	glutIdleFunc(KinectUpdate);
 	Texture();
 	loadOBJModel();
+	/*--------------above this do not need check again--------------*/
+
+	//update
 	glutTimerFunc(1000, timer, 0);
 	//glutTimerFunc(125, timer, 1);
 	BuildPopupMenu();
-
 	glutMainLoop();
 	if (IS_PORTAUDIO_INIT)
 	{
